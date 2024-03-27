@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::{convert::Into, str::FromStr};
 use tokio_tungstenite::tungstenite::Message;
 
-use crate::sdr::Station;
+use crate::sdr::Tuning;
 
 pub struct LoginMessage {
     pub pass: Option<String>,
@@ -14,9 +14,9 @@ impl LoginMessage {
     }
 }
 
-impl Into<Message> for LoginMessage {
-    fn into(self) -> Message {
-        if let Some(pass) = self.pass {
+impl From<LoginMessage> for Message {
+    fn from(msg: LoginMessage) -> Message {
+        if let Some(pass) = msg.pass {
             Message::Text(format!("SET auth t=kiwi p={}", pass))
         } else {
             Message::Text("SET auth t=kiwi p=#".to_string())
@@ -25,11 +25,11 @@ impl Into<Message> for LoginMessage {
 }
 
 pub struct TuneMessage {
-    pub station: Station,
+    pub station: Tuning,
 }
 
 impl TuneMessage {
-    pub fn new(station: Station) -> Self {
+    pub fn new(station: Tuning) -> Self {
         TuneMessage { station }
     }
 }
@@ -37,11 +37,38 @@ impl TuneMessage {
 impl Into<Message> for TuneMessage {
     fn into(self) -> Message {
         match self.station {
-            Station::AM(tuning) => Message::Text(format!(
+            Tuning::AM {
+                bandwidth,
+                frequency,
+            } => Message::Text(format!(
                 "SET mod=am low_cut={} high_cut={} freq={}",
-                -(tuning.bandwidth / 2) as i32,
-                (tuning.bandwidth / 2) as i32,
-                tuning.freq
+                -(bandwidth / 2) as i32,
+                (bandwidth / 2) as i32,
+                frequency / 1000.0
+            )),
+            Tuning::FM {
+                low_cut,
+                high_cut,
+                frequency: freq,
+            } => Message::Text(format!(
+                "SET mod=fm low_cut={} high_cut={} freq={}",
+                low_cut, high_cut, freq
+            )),
+            Tuning::LSB {
+                low_cut,
+                high_cut,
+                frequency: freq,
+            } => Message::Text(format!(
+                "SET mod=lsb low_cut={} high_cut={} freq={}",
+                low_cut, high_cut, freq
+            )),
+            Tuning::USB {
+                low_cut,
+                high_cut,
+                frequency: freq,
+            } => Message::Text(format!(
+                "SET mod=usb low_cut={} high_cut={} freq={}",
+                low_cut, high_cut, freq
             )),
             _ => {
                 todo!();
@@ -52,24 +79,11 @@ impl Into<Message> for TuneMessage {
 
 pub struct AgcMessage {
     pub enabled: bool,
-    pub hang: i64,
+    pub hang: bool,
     pub thresh: i64,
     pub slope: i64,
     pub decay: i64,
     pub gain: i64,
-}
-
-impl AgcMessage {
-    pub fn new(enabled: bool, hang: i64, thresh: i64, slope: i64, decay: i64, gain: i64) -> Self {
-        AgcMessage {
-            enabled,
-            hang,
-            thresh,
-            slope,
-            decay,
-            gain,
-        }
-    }
 }
 
 impl Into<Message> for AgcMessage {
@@ -77,7 +91,7 @@ impl Into<Message> for AgcMessage {
         Message::Text(format!(
             "SET agc={} hang={} thresh={} slope={} decay={} manGain={}",
             if self.enabled { 1 } else { 0 },
-            self.hang,
+            if self.hang { 1 } else { 0 },
             self.thresh,
             self.slope,
             self.decay,
@@ -127,5 +141,17 @@ impl SetLocationMessage {
 impl Into<Message> for SetLocationMessage {
     fn into(self) -> Message {
         Message::Text(format!("SET geoloc={}", self.location))
+    }
+}
+
+pub enum KiwiMessage {
+    KeepAlive,
+}
+
+impl Into<Message> for KiwiMessage {
+    fn into(self) -> Message {
+        match self {
+            KiwiMessage::KeepAlive => Message::Text("SET keepalive".to_string()),
+        }
     }
 }

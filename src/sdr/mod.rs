@@ -1,10 +1,10 @@
-mod client;
 pub mod kiwi;
+mod scraper;
 
 use std::fmt::{self, Display, Formatter};
 
-pub use client::SDRClient;
-pub use kiwi::KiwiSDR;
+pub use scraper::{SDRScraper, ScraperStatus};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug)]
 pub enum SDRError {
@@ -13,54 +13,59 @@ pub enum SDRError {
     Timeout,
 }
 
-pub struct AMTuning {
-    pub bandwidth: i32,
-    pub freq: f64,
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(tag = "mode")]
+pub enum Tuning {
+    AM {
+        bandwidth: i32,
+        frequency: f64,
+    },
+    FM {
+        low_cut: i32,
+        high_cut: i32,
+        frequency: f64,
+    },
+    LSB {
+        low_cut: i32,
+        high_cut: i32,
+        frequency: f64,
+    },
+    USB {
+        low_cut: i32,
+        high_cut: i32,
+        frequency: f64,
+    },
 }
 
-pub struct GeneralTuning {
-    pub low_cut: i32,
-    pub high_cut: i32,
-    pub freq: f64,
-}
-
-pub enum Station {
-    AM(AMTuning),
-    FM(GeneralTuning),
-    LSB(GeneralTuning),
-    USB(GeneralTuning),
-}
-
-impl Display for Station {
+impl Display for Tuning {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Station::AM(config) => {
-                write!(
-                    f,
-                    "AM: {} Hz, {} Hz bandwidth",
-                    config.freq, config.bandwidth
-                )
+            Tuning::AM {
+                bandwidth,
+                frequency: freq,
+            } => {
+                write!(f, "AM: {} Hz, {} Hz bandwidth", freq, bandwidth)
             }
-            Station::FM(config) => {
-                write!(
-                    f,
-                    "FM: {} Hz, -{}->{} Hz",
-                    config.freq, config.low_cut, config.high_cut
-                )
+            Tuning::FM {
+                low_cut,
+                high_cut,
+                frequency: freq,
+            } => {
+                write!(f, "FM: {} Hz, -{}->{} Hz", freq, low_cut, high_cut)
             }
-            Station::LSB(config) => {
-                write!(
-                    f,
-                    "LSB: {} Hz, -{}->{} Hz",
-                    config.freq, config.low_cut, config.high_cut
-                )
+            Tuning::LSB {
+                low_cut,
+                high_cut,
+                frequency: freq,
+            } => {
+                write!(f, "LSB: {} Hz, -{}->{} Hz", freq, low_cut, high_cut)
             }
-            Station::USB(config) => {
-                write!(
-                    f,
-                    "USB: {} Hz, -{}->{} Hz",
-                    config.freq, config.low_cut, config.high_cut
-                )
+            Tuning::USB {
+                low_cut,
+                high_cut,
+                frequency: freq,
+            } => {
+                write!(f, "USB: {} Hz, -{}->{} Hz", freq, low_cut, high_cut)
             }
         }
     }
