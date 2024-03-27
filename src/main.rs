@@ -43,7 +43,7 @@ fn setup_logger() -> Result<(), fern::InitError> {
 #[tokio::main]
 async fn main() {
     // setup_logger().unwrap();
-    simple_logger::init_with_level(log::Level::Info).unwrap();
+    simple_logger::init_with_level(log::Level::Debug).unwrap();
     log::info!("welcome to {}!", "SDR Scraper".bold().white());
 
     // Read sdrs.json

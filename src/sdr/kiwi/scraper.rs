@@ -5,11 +5,12 @@ use tokio::sync::Mutex;
 use url::Url;
 
 use crate::sdr::{
+    kiwi::event::{KiwiCloseReason, KiwiEvent},
     scraper::{SDRScraper, ScraperStatus},
     Tuning,
 };
 
-use super::KiwiSDR;
+use super::{message::KiwiServerMessage, KiwiSDR};
 
 #[derive(Clone)]
 pub struct KiwiSDRScraperSettings {
@@ -47,7 +48,7 @@ impl SDRScraper for KiwiSDRScraper {
             ScraperStatus::Stopped => {}
         }
 
-        log::debug!("Starting scraper for {}", self.settings.name.green());
+        log::debug!("starting scraper for {}", self.settings.name.green());
 
         let sdr = KiwiSDR::connect(
             self.settings.name.clone(),
@@ -63,30 +64,56 @@ impl SDRScraper for KiwiSDRScraper {
             let settings = self.settings.clone();
             let sdr = self.sdr.clone().unwrap();
             tokio::spawn(async move {
-                log::debug!("Spawned watch thread for {}", settings.name.green());
+                log::debug!("spawned event thread for {}", settings.name.green());
                 loop {
-                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                     let mut sdr = sdr.lock().await;
-                    if !sdr.connected() {
-                        log::warn!(
-                            "{} is not connected, attempting to reconnect...",
-                            settings.name
-                        );
-                        // new sdr
-                        let new_sdr = KiwiSDR::connect(
-                            settings.name.clone(),
-                            settings.endpoint.clone(),
-                            settings.password.clone(),
-                        );
+                    if let Some(event) = sdr.read_event().await {
+                        match event {
+                            KiwiEvent::Close(reason) => {
+                                match reason {
+                                    KiwiCloseReason::ServerClosed => {
+                                        log::error!(
+                                            "{}: server closed connection",
+                                            settings.name.red()
+                                        );
+                                    }
+                                    KiwiCloseReason::AuthenticationFailed => {
+                                        log::error!(
+                                            "{}: authentication failed",
+                                            settings.name.red()
+                                        );
+                                    }
+                                }
 
-                        match new_sdr.await {
-                            Ok(new_sdr) => {
-                                *sdr = Box::new(new_sdr);
-                                log::info!("reconnected to {}", settings.name.green());
+                                let new_sdr = KiwiSDR::connect(
+                                    settings.name.clone(),
+                                    settings.endpoint.clone(),
+                                    settings.password.clone(),
+                                );
+
+                                match new_sdr.await {
+                                    Ok(new_sdr) => {
+                                        *sdr = Box::new(new_sdr);
+                                        log::info!("reconnected to {}", settings.name.green());
+                                    }
+                                    Err(e) => {
+                                        log::error!("railed to reconnect to SDR: {}", e);
+                                    }
+                                }
+                                break;
                             }
-                            Err(e) => {
-                                log::error!("railed to reconnect to SDR: {}", e);
+                            KiwiEvent::Message(msg) => {
+                                log::debug!(
+                                    "{}: {}",
+                                    settings.name.blue(),
+                                    if msg.len() > 100 {
+                                        format!("{:.100}...", msg)
+                                    } else {
+                                        msg
+                                    }
+                                );
                             }
+                            _ => {}
                         }
                     }
                 }

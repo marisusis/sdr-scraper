@@ -155,9 +155,9 @@ impl Into<Message> for KiwiMessage {
     }
 }
 
+#[derive(Debug)]
 pub enum KiwiServerMessage {
-    BadPassword,
-    AuthOk,
+    AuthenticationResult(bool),
     Unknown(String),
     AudioInit,
 }
@@ -166,9 +166,9 @@ impl From<String> for KiwiServerMessage {
     fn from(msg: String) -> KiwiServerMessage {
         if msg.contains("badp") {
             if msg.eq("badp=1") {
-                KiwiServerMessage::BadPassword
+                KiwiServerMessage::AuthenticationResult(false)
             } else {
-                KiwiServerMessage::AuthOk
+                KiwiServerMessage::AuthenticationResult(true)
             }
         } else if msg.contains("audio_init") {
             KiwiServerMessage::AudioInit
