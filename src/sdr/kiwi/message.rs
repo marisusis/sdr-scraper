@@ -1,7 +1,7 @@
+use crate::sdr::Tuning;
+use percent_encoding::{percent_decode, percent_encode, NON_ALPHANUMERIC};
 use std::convert::Into;
 use tokio_tungstenite::tungstenite::Message;
-
-use crate::sdr::Tuning;
 
 pub struct LoginMessage {
     pub pass: Option<String>,
@@ -23,134 +23,100 @@ impl From<LoginMessage> for Message {
     }
 }
 
-pub struct TuneMessage {
-    pub station: Tuning,
+#[derive(Debug)]
+pub enum KiwiClientMessage {
+    AROk {
+        input_rate: i64,
+        output_rate: i64,
+    },
+    SetCompression(bool),
+    SetIdentity(String),
+    SetLocation(String),
+    SetAgc {
+        enabled: bool,
+        decay: i64,
+        hang: bool,
+        slope: i64,
+        thresh: i64,
+        gain: i64,
+    },
+    Tune(Tuning),
+    Unknown(String),
 }
 
-impl TuneMessage {
-    pub fn new(station: Tuning) -> Self {
-        TuneMessage { station }
-    }
-}
-
-impl Into<Message> for TuneMessage {
-    fn into(self) -> Message {
-        match self.station {
-            Tuning::AM {
-                bandwidth,
-                frequency,
-            } => Message::Text(format!(
-                "SET mod=am low_cut={} high_cut={} freq={}",
-                -(bandwidth / 2) as i32,
-                (bandwidth / 2) as i32,
-                frequency / 1000.0
-            )),
-            Tuning::FM {
-                low_cut,
-                high_cut,
-                frequency: freq,
-            } => Message::Text(format!(
-                "SET mod=fm low_cut={} high_cut={} freq={}",
-                low_cut, high_cut, freq
-            )),
-            Tuning::LSB {
-                low_cut,
-                high_cut,
-                frequency: freq,
-            } => Message::Text(format!(
-                "SET mod=lsb low_cut={} high_cut={} freq={}",
-                low_cut, high_cut, freq
-            )),
-            Tuning::USB {
-                low_cut,
-                high_cut,
-                frequency: freq,
-            } => Message::Text(format!(
-                "SET mod=usb low_cut={} high_cut={} freq={}",
-                low_cut, high_cut, freq
-            )),
-            _ => {
-                todo!();
+impl From<KiwiClientMessage> for Message {
+    fn from(msg: KiwiClientMessage) -> Message {
+        match msg {
+            KiwiClientMessage::AROk {
+                input_rate,
+                output_rate,
+            } => Message::Text(format!("SET AR OK in={} out={}", input_rate, output_rate)),
+            KiwiClientMessage::Tune(tuning) => match tuning {
+                Tuning::AM {
+                    bandwidth,
+                    frequency,
+                } => Message::Text(format!(
+                    "SET mod=am low_cut={} high_cut={} freq={}",
+                    -(bandwidth / 2) as i32,
+                    (bandwidth / 2) as i32,
+                    frequency / 1000.0
+                )),
+                Tuning::FM {
+                    low_cut,
+                    high_cut,
+                    frequency: freq,
+                } => Message::Text(format!(
+                    "SET mod=fm low_cut={} high_cut={} freq={}",
+                    low_cut, high_cut, freq
+                )),
+                Tuning::LSB {
+                    low_cut,
+                    high_cut,
+                    frequency: freq,
+                } => Message::Text(format!(
+                    "SET mod=lsb low_cut={} high_cut={} freq={}",
+                    low_cut, high_cut, freq
+                )),
+                Tuning::USB {
+                    low_cut,
+                    high_cut,
+                    frequency: freq,
+                } => Message::Text(format!(
+                    "SET mod=usb low_cut={} high_cut={} freq={}",
+                    low_cut, high_cut, freq
+                )),
+                _ => {
+                    todo!();
+                }
+            },
+            KiwiClientMessage::SetCompression(enabled) => {
+                Message::Text(format!("SET compression={}", if enabled { 1 } else { 0 }))
             }
-        }
-    }
-}
-
-pub struct AgcMessage {
-    pub enabled: bool,
-    pub hang: bool,
-    pub thresh: i64,
-    pub slope: i64,
-    pub decay: i64,
-    pub gain: i64,
-}
-
-impl Into<Message> for AgcMessage {
-    fn into(self) -> Message {
-        Message::Text(format!(
-            "SET agc={} hang={} thresh={} slope={} decay={} manGain={}",
-            if self.enabled { 1 } else { 0 },
-            if self.hang { 1 } else { 0 },
-            self.thresh,
-            self.slope,
-            self.decay,
-            self.gain
-        ))
-    }
-}
-pub struct SetCompressionMessage {
-    pub enabled: bool,
-}
-
-impl Into<Message> for SetCompressionMessage {
-    fn into(self) -> Message {
-        Message::Text(format!(
-            "SET compression={}",
-            if self.enabled { 1 } else { 0 }
-        ))
-    }
-}
-
-pub struct SetIdentityMessage {
-    identity: String,
-}
-
-impl SetIdentityMessage {
-    pub fn new(identity: String) -> Self {
-        SetIdentityMessage { identity }
-    }
-}
-
-impl Into<Message> for SetIdentityMessage {
-    fn into(self) -> Message {
-        Message::Text(format!("SET ident_user={}", self.identity))
-    }
-}
-
-pub struct SetLocationMessage {
-    location: String,
-}
-
-impl SetLocationMessage {
-    pub fn new(location: String) -> Self {
-        SetLocationMessage { location }
-    }
-}
-
-impl Into<Message> for SetLocationMessage {
-    fn into(self) -> Message {
-        Message::Text(format!("SET geoloc={}", self.location))
-    }
-}
-
-pub enum KiwiMessage {
-    KeepAlive,
-}
-
-impl Into<Message> for KiwiMessage {
-    fn into(self) -> Message {
-        match self {
-            KiwiMessage::KeepAlive => Message::Text("SET keepalive".to_string()),
+            KiwiClientMessage::SetIdentity(identity) => Message::Text(format!(
+                "SET ident_user={}",
+                percent_encode(identity.as_bytes(), NON_ALPHANUMERIC)
+            )),
+            KiwiClientMessage::SetLocation(location) => Message::Text(format!(
+                "SET geoloc={}",
+                percent_encode(location.as_bytes(), NON_ALPHANUMERIC)
+            )),
+            KiwiClientMessage::SetAgc {
+                enabled,
+                decay,
+                hang,
+                slope,
+                thresh,
+                gain,
+            } => Message::Text(format!(
+                "SET agc={} hang={} thresh={} slope={} decay={}  manGain={}",
+                if enabled { 1 } else { 0 },
+                if hang { 1 } else { 0 },
+                thresh,
+                slope,
+                decay,
+                gain
+            )),
+            KiwiClientMessage::Unknown(msg) => Message::Text(msg),
         }
     }
 }

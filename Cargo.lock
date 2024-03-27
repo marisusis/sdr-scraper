@@ -599,6 +599,7 @@ dependencies = [
  "hound",
  "humantime",
  "log",
+ "percent-encoding",
  "rand",
  "regex",
  "serde",

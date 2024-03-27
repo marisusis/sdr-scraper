@@ -10,6 +10,7 @@ pub enum KiwiCloseReason {
 pub enum KiwiEvent {
     Close(KiwiCloseReason),
     Message(String),
+    Ready,
     SoundData(Vec<u8>),
     Ping,
 }
