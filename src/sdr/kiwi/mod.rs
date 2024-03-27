@@ -4,6 +4,7 @@ mod scraper;
 
 use std::{sync::Arc, time::Duration};
 
+use byteorder::{BigEndian, ByteOrder, LittleEndian};
 use futures_util::{SinkExt, StreamExt};
 
 pub use message::LoginMessage;
@@ -93,7 +94,15 @@ impl KiwiSDR {
                         let code = String::from_utf8(bin[..3].to_vec()).unwrap();
                         match code.as_str() {
                             "SND" => {
-                                let data = bin[4..].to_vec();
+                                let data = bin[3..].to_vec();
+                                let flags = data[0];
+                                let seq = LittleEndian::read_u32(&data[1..5]);
+                                let smeter = BigEndian::read_u16(&data[5..7]);
+
+                                let rssi = 0.1 * smeter as f32 - 127.0;
+                                log::debug!("RSSI: {}", rssi);
+
+                                let data = data[7..].to_vec();
                                 event_tx.send(KiwiEvent::SoundData(data)).await.unwrap();
                             }
                             "MSG" => {
@@ -172,7 +181,6 @@ impl KiwiSDR {
             let token = token_clone;
             let write_loop = async {
                 loop {
-                    log::debug!("Waiting for message");
                     if let Some(msg) = msg_rx.recv().await {
                         let msg: Message = msg.into();
                         log::debug!("Sending message: {:?}", msg);

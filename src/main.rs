@@ -43,7 +43,7 @@ fn setup_logger() -> Result<(), fern::InitError> {
 #[tokio::main]
 async fn main() {
     // setup_logger().unwrap();
-    simple_logger::init_with_level(log::Level::Debug).unwrap();
+    simple_logger::init_with_level(log::Level::Info).unwrap();
     log::info!("welcome to {}!", "SDR Scraper".bold().white());
 
     // Read sdrs.json
@@ -100,6 +100,7 @@ async fn main() {
         });
 
     for station in &mut stations {
+        log::info!("starting {}", station.name().green());
         match station.start().await {
             Ok(_) => {}
             Err(e) => log::error!("error starting {}: {}", station.name(), e.to_string().red()),
@@ -107,8 +108,10 @@ async fn main() {
     }
 
     tokio::signal::ctrl_c().await.unwrap();
+    println!();
 
     for station in &mut stations {
+        log::info!("stopping {}", station.name().green());
         if station.status() == ScraperStatus::Stopped {
             continue;
         }

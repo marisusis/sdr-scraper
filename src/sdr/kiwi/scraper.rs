@@ -1,17 +1,21 @@
 use std::sync::Arc;
 
 use colored::Colorize;
+use hound::{WavSpec, WavWriter};
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use url::Url;
 
-use crate::sdr::{
-    kiwi::{
-        event::{KiwiCloseReason, KiwiEvent},
-        message::KiwiClientMessage,
+use crate::{
+    audio::Writer,
+    sdr::{
+        kiwi::{
+            event::{KiwiCloseReason, KiwiEvent},
+            message::KiwiClientMessage,
+        },
+        scraper::{SDRScraper, ScraperStatus},
+        Tuning,
     },
-    scraper::{SDRScraper, ScraperStatus},
-    Tuning,
 };
 
 use super::{message::KiwiServerMessage, KiwiSDR};
@@ -30,6 +34,7 @@ pub struct KiwiSDRScraper {
     sdr: Arc<Mutex<Box<KiwiSDR>>>,
     status: ScraperStatus,
     token: CancellationToken,
+    writer: Arc<Mutex<Writer>>,
 }
 
 impl KiwiSDRScraper {
@@ -39,6 +44,9 @@ impl KiwiSDRScraper {
             sdr: Arc::new(Mutex::new(Box::new(KiwiSDR::new(settings.endpoint)))),
             status: ScraperStatus::Stopped,
             token: CancellationToken::new(),
+            writer: Arc::new(Mutex::new(Writer::new(
+                std::fs::File::create(format!("{}.wav", settings.name)).unwrap(),
+            ))),
         }
     }
 }
@@ -68,7 +76,9 @@ impl SDRScraper for KiwiSDRScraper {
         let settings = self.settings.clone();
         let sdr = self.sdr.clone();
         let token = self.token.clone();
+        let writer_clone = self.writer.clone();
         tokio::spawn(async move {
+            let writer = writer_clone;
             let event_loop = async {
                 log::debug!("spawned event thread for {}", settings.name.green());
                 loop {
@@ -135,12 +145,9 @@ impl SDRScraper for KiwiSDRScraper {
                                 .await
                                 .unwrap();
 
-                                sdr.send_message(KiwiClientMessage::Tune(Tuning::AM {
-                                    bandwidth: 5000,
-                                    frequency: 7.85e6,
-                                }))
-                                .await
-                                .unwrap();
+                                sdr.send_message(KiwiClientMessage::Tune(settings.station.clone()))
+                                    .await
+                                    .unwrap();
 
                                 sdr.send_message(KiwiClientMessage::SetIdentity(
                                     "W8EDU".to_string(),
@@ -169,19 +176,17 @@ impl SDRScraper for KiwiSDRScraper {
                                     .await
                                     .unwrap();
                             }
-                            KiwiEvent::SoundData(data) => {
-                                log::debug!("got data from {}", settings.name.yellow());
-                            }
+                            KiwiEvent::SoundData(data) => writer.lock().await.write_samples(&data),
                             KiwiEvent::Message(msg) => {
-                                // log::debug!(
-                                //     "{}: {}",
-                                //     settings.name.blue(),
-                                //     if msg.len() > 100 {
-                                //         format!("{:.100}...", msg)
-                                //     } else {
-                                //         msg
-                                //     }
-                                // );
+                                log::debug!(
+                                    "{}: {}",
+                                    settings.name.blue(),
+                                    if msg.len() > 100 {
+                                        format!("{:.100}...", msg)
+                                    } else {
+                                        msg
+                                    }
+                                );
                             }
                             _ => {}
                         }
@@ -206,11 +211,6 @@ impl SDRScraper for KiwiSDRScraper {
         log::debug!("Stopping scraper for {}", self.settings.name.green());
 
         self.token.cancel();
-
-        // if self.sdr.is_none() {
-        //     log::warn!("SDR for {} is already stopped", self.settings.name);
-        //     return Ok(());
-        // }
 
         let sdr = self.sdr.lock().await;
 
