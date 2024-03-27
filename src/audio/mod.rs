@@ -31,7 +31,7 @@ impl Writer {
     }
 
     pub fn write_samples(&mut self, samples: &Vec<u8>) {
-        log::debug!("Writing samples: {:?}", samples);
+        // log::debug!("Writing samples: {:?}", samples);
         let mut writer = self.wav_writer.get_i16_writer((samples.len() as u32) * 2);
         let mut cursor = std::io::Cursor::new(samples);
         while let Ok(sample) = cursor.read_u8() {

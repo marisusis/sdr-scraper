@@ -140,6 +140,16 @@ impl SDRScraper for KiwiSDRScraper {
                                 .unwrap();
 
                                 sdr.send_message(KiwiClientMessage::Unknown(
+                                    "SERVER DE CLIENT openwebrx.js SND".to_string(),
+                                ))
+                                .await
+                                .unwrap();
+
+                                sdr.send_message(KiwiClientMessage::Unknown("SET browser=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15".to_string()))
+                                    .await
+                                    .unwrap();
+
+                                sdr.send_message(KiwiClientMessage::Unknown(
                                     "SET squelch=0 param=0.00".to_string(),
                                 ))
                                 .await
@@ -176,7 +186,14 @@ impl SDRScraper for KiwiSDRScraper {
                                     .await
                                     .unwrap();
                             }
-                            KiwiEvent::SoundData(data) => writer.lock().await.write_samples(&data),
+                            KiwiEvent::SoundData(data) => {
+                                log::debug!(
+                                    "{}: received {} samples",
+                                    settings.name.blue(),
+                                    data.len()
+                                );
+                                writer.lock().await.write_samples(&data)
+                            }
                             KiwiEvent::Message(msg) => {
                                 log::debug!(
                                     "{}: {}",

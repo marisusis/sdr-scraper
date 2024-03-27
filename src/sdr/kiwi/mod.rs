@@ -59,8 +59,9 @@ impl KiwiSDR {
             .map_err(|_| anyhow::anyhow!("Connection timeout"))??;
 
         let (mut write, read) = ws_socket.split();
-        let message: Message = LoginMessage::new(password).into();
-        write.send(message).await?;
+        write
+            .send(KiwiClientMessage::Login(password).into())
+            .await?;
 
         // Create event channels
         let (event_tx, event_rx) = tokio::sync::mpsc::channel::<KiwiEvent>(100);

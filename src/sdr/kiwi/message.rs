@@ -29,6 +29,7 @@ pub enum KiwiClientMessage {
         input_rate: i64,
         output_rate: i64,
     },
+    Login(Option<String>),
     SetCompression(bool),
     SetIdentity(String),
     SetLocation(String),
@@ -47,6 +48,13 @@ pub enum KiwiClientMessage {
 impl From<KiwiClientMessage> for Message {
     fn from(msg: KiwiClientMessage) -> Message {
         match msg {
+            KiwiClientMessage::Login(password) => {
+                if let Some(pass) = password {
+                    Message::Text(format!("SET auth t=kiwi p={}", pass))
+                } else {
+                    Message::Text("SET auth t=kiwi p=#".to_string())
+                }
+            }
             KiwiClientMessage::AROk {
                 input_rate,
                 output_rate,
