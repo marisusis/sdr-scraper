@@ -2,29 +2,17 @@ mod audio;
 mod config;
 mod sdr;
 
-use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt};
 use colored::Colorize;
-use futures_util::{SinkExt, StreamExt};
-use hound::{WavSpec, WavWriter};
-use rand::Rng;
+use futures_util::StreamExt;
+
 use sdr::kiwi::{KiwiSDRScraper, KiwiSDRScraperSettings};
-use sdr::{kiwi::TuneMessage, Tuning};
-use serde::{Deserialize, Serialize};
+
 use std::time::SystemTime;
-use std::{path::Path, pin::Pin, sync::Arc};
-use tokio::sync::Mutex;
-use tokio_tungstenite::tungstenite::Message;
+
 use url::Url;
 
 use crate::config::{Config, SDRKind};
 use crate::sdr::{SDRScraper, ScraperStatus};
-use crate::{
-    audio::ima_adpcm::IMA_ADPCM_Decoder,
-    sdr::kiwi::{
-        AgcMessage, KiwiMessage, LoginMessage, SetCompressionMessage, SetIdentityMessage,
-        SetLocationMessage,
-    },
-};
 
 fn setup_logger() -> Result<(), fern::InitError> {
     fern::Dispatch::new()
@@ -55,7 +43,7 @@ fn setup_logger() -> Result<(), fern::InitError> {
 #[tokio::main]
 async fn main() {
     // setup_logger().unwrap();
-    simple_logger::init_with_level(log::Level::Debug).unwrap();
+    simple_logger::init_with_level(log::Level::Info).unwrap();
     log::info!("welcome to {}!", "SDR Scraper".bold().white());
 
     // Read sdrs.json

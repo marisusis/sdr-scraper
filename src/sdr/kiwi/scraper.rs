@@ -82,10 +82,10 @@ impl SDRScraper for KiwiSDRScraper {
                         match new_sdr.await {
                             Ok(new_sdr) => {
                                 *sdr = Box::new(new_sdr);
-                                log::info!("Reconnected to {}", settings.name.green());
+                                log::info!("reconnected to {}", settings.name.green());
                             }
                             Err(e) => {
-                                log::error!("Failed to reconnect to SDR: {}", e);
+                                log::error!("railed to reconnect to SDR: {}", e);
                             }
                         }
                     }

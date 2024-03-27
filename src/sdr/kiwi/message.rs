@@ -1,5 +1,4 @@
-use anyhow::Result;
-use std::{convert::Into, str::FromStr};
+use std::convert::Into;
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::sdr::Tuning;
@@ -152,6 +151,29 @@ impl Into<Message> for KiwiMessage {
     fn into(self) -> Message {
         match self {
             KiwiMessage::KeepAlive => Message::Text("SET keepalive".to_string()),
+        }
+    }
+}
+
+pub enum KiwiServerMessage {
+    BadPassword,
+    AuthOk,
+    Unknown(String),
+    AudioInit,
+}
+
+impl From<String> for KiwiServerMessage {
+    fn from(msg: String) -> KiwiServerMessage {
+        if msg.contains("badp") {
+            if msg.eq("badp=1") {
+                KiwiServerMessage::BadPassword
+            } else {
+                KiwiServerMessage::AuthOk
+            }
+        } else if msg.contains("audio_init") {
+            KiwiServerMessage::AudioInit
+        } else {
+            KiwiServerMessage::Unknown(msg)
         }
     }
 }
