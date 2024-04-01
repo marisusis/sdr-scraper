@@ -3,47 +3,20 @@ mod config;
 mod sdr;
 
 use colored::Colorize;
-use futures_util::StreamExt;
 
 use sdr::kiwi::{KiwiSDRScraper, KiwiSDRScraperSettings};
-
-use std::time::SystemTime;
+use sdr::Tuning;
 
 use url::Url;
 
 use crate::config::{Config, SDRKind};
 use crate::sdr::{SDRScraper, ScraperStatus};
 
-fn setup_logger() -> Result<(), fern::InitError> {
-    fern::Dispatch::new()
-        .format(|out, message, record| {
-            let color = match record.level() {
-                log::Level::Error => "red",
-                log::Level::Warn => "yellow",
-                log::Level::Info => "green",
-                log::Level::Debug => "blue",
-                log::Level::Trace => "magenta",
-            };
-
-            let colored_level = format!("{}", record.level()).color(color);
-            out.finish(format_args!(
-                "[{} {} {}] {}",
-                humantime::format_rfc3339_millis(SystemTime::now()),
-                colored_level,
-                record.target(),
-                message
-            ))
-        })
-        .level(log::LevelFilter::Info)
-        .chain(std::io::stdout())
-        .apply()?;
-    Ok(())
-}
-
 #[tokio::main]
+// Use multi threading
 async fn main() {
     // setup_logger().unwrap();
-    simple_logger::init_with_level(log::Level::Debug).unwrap();
+    simple_logger::init_with_level(log::Level::Info).unwrap();
     log::info!("welcome to {}!", "SDR Scraper".bold().white());
 
     // Read sdrs.json
@@ -75,29 +48,35 @@ async fn main() {
         "loading {} stations...",
         config.stations.len().to_string().green()
     );
-    let mut stations: Vec<Box<dyn SDRScraper>> = Vec::new();
-    config
-        .stations
-        .iter()
-        .for_each(|station_config| match station_config.kind {
-            SDRKind::KiwiSDR => {
-                let endpoint = "ws://".to_owned() + &station_config.endpoint;
-                let endpoint = Url::parse(&endpoint).unwrap();
 
-                log::debug!(
-                    "found {} at {}",
-                    "KiwiSDR".green(),
-                    endpoint.to_string().green()
-                );
-                stations.push(Box::new(KiwiSDRScraper::new(KiwiSDRScraperSettings {
-                    name: station_config.name.clone(),
-                    endpoint: endpoint,
-                    password: station_config.password.clone(),
-                    agc: station_config.agc,
-                    station: station_config.tuning.clone(),
-                })));
-            }
+    let mut stations: Vec<Box<dyn SDRScraper>> = Vec::new();
+    config.stations.iter().for_each(|station_config| {
+        let endpoint = "ws://".to_owned() + &station_config.endpoint;
+        let endpoint = Url::parse(&endpoint).unwrap();
+
+        log::debug!(
+            "found {} at {}",
+            "KiwiSDR".green(),
+            endpoint.to_string().green()
+        );
+
+        station_config.frequency.iter().for_each(|frequency| {
+            // name in megahertz
+            let name = format!("{}_{:.0}", station_config.name.clone(), frequency / 1_000.0);
+            log::debug!("tuning to {}", frequency.to_string().green());
+            stations.push(Box::new(KiwiSDRScraper::new(KiwiSDRScraperSettings {
+                name: name,
+                endpoint: endpoint.clone(),
+                password: station_config.password.clone(),
+                agc: station_config.agc,
+                station: Tuning::USB {
+                    low_cut: 300,
+                    high_cut: 2700,
+                    frequency: frequency.to_owned(),
+                },
+            })));
         });
+    });
 
     for station in &mut stations {
         log::info!("starting {}", station.name().green());

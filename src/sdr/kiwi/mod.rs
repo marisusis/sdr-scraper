@@ -2,18 +2,15 @@ pub mod event;
 mod message;
 mod scraper;
 
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use byteorder::{BigEndian, ByteOrder, LittleEndian};
 use futures_util::{SinkExt, StreamExt};
 
-pub use message::LoginMessage;
-
-use colored::Colorize;
-use percent_encoding::{percent_decode, percent_encode};
 use rand::Rng;
 pub use scraper::{KiwiSDRScraper, KiwiSDRScraperSettings};
-use tokio::sync::Mutex;
+
+use serde::{Deserialize, Serialize};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_util::sync::CancellationToken;
 use url::Url;
@@ -21,6 +18,16 @@ use url::Url;
 use crate::sdr::kiwi::{event::KiwiCloseReason, message::KiwiServerMessage};
 
 pub use self::{event::KiwiEvent, message::KiwiClientMessage};
+
+#[derive(Deserialize, Serialize)]
+pub struct VerResponse {
+    #[serde(rename = "maj")]
+    pub major: i32,
+    #[serde(rename = "min")]
+    pub minor: i32,
+    #[serde(rename = "ts")]
+    pub code: Option<i128>,
+}
 
 pub struct KiwiSDR {
     cancellation_token: CancellationToken,
@@ -40,12 +47,24 @@ impl KiwiSDR {
     }
 
     pub async fn connect(&mut self, password: Option<String>) -> anyhow::Result<()> {
-        let number = {
+        log::debug!("Connecting to KiwiSDR at {}", self.endpoint.clone());
+
+        let mut url = self.endpoint.clone();
+        url.set_scheme("http").unwrap();
+        url = url.join("VER").unwrap();
+
+        log::info!("getting version from {}", url);
+        let response = reqwest::get(url).await?;
+        let version = response.json::<VerResponse>().await?;
+        log::info!("KiwiSDR version: {}.{}", version.major, version.minor);
+
+        // reqwest::get
+        let number = if let Some(code) = version.code {
+            code
+        } else {
             let mut rng = rand::thread_rng();
             rng.gen_range(0..1000)
         };
-
-        log::debug!("Connecting to KiwiSDR at {}", self.endpoint.clone());
 
         // Connect and login
         let connect = tokio_tungstenite::connect_async(format!(
@@ -96,8 +115,8 @@ impl KiwiSDR {
                         match code.as_str() {
                             "SND" => {
                                 let data = bin[3..].to_vec();
-                                let flags = data[0];
-                                let seq = LittleEndian::read_u32(&data[1..5]);
+                                let _flags = data[0];
+                                let _seq = LittleEndian::read_u32(&data[1..5]);
                                 let smeter = BigEndian::read_u16(&data[5..7]);
 
                                 let rssi = 0.1 * smeter as f32 - 127.0;
@@ -130,14 +149,14 @@ impl KiwiSDR {
                                                 .unwrap();
                                         }
                                     }
-                                    KiwiServerMessage::AudioInit => {
-                                        event_tx.send(KiwiEvent::Ready).await.unwrap();
+                                    KiwiServerMessage::AudioInit(rate) => {
+                                        event_tx.send(KiwiEvent::Ready(rate)).await.unwrap();
                                     }
                                     _ => {}
                                 }
                             }
                             _ => {
-                                let str = match String::from_utf8(bin[4..].to_vec()) {
+                                let _str = match String::from_utf8(bin[4..].to_vec()) {
                                     Ok(str) => str,
                                     Err(e) => {
                                         log::error!("Error decoding binary message: {:?}", e);
@@ -147,7 +166,7 @@ impl KiwiSDR {
                             }
                         }
                     }
-                    Message::Close(close) => {
+                    Message::Close(_close) => {
                         token.cancel();
                         event_tx
                             .send(KiwiEvent::Close(KiwiCloseReason::ServerClosed))
@@ -155,7 +174,7 @@ impl KiwiSDR {
                             .unwrap();
                         return;
                     }
-                    Message::Ping(ping) => {
+                    Message::Ping(_ping) => {
                         event_tx.send(KiwiEvent::Ping).await.unwrap();
                     }
                     Message::Pong(pong) => {
@@ -185,6 +204,7 @@ impl KiwiSDR {
                     if let Some(msg) = msg_rx.recv().await {
                         let msg: Message = msg.into();
                         log::debug!("Sending message: {:?}", msg);
+                        log::debug!("Message: {:?}", Message::from(msg.clone()));
                         write.send(msg).await.unwrap();
                     }
                 }

@@ -1,6 +1,6 @@
 use crate::sdr::Tuning;
-use percent_encoding::{percent_decode, percent_encode, NON_ALPHANUMERIC};
-use std::convert::Into;
+use percent_encoding::{percent_encode, NON_ALPHANUMERIC};
+
 use tokio_tungstenite::tungstenite::Message;
 
 pub struct LoginMessage {
@@ -30,6 +30,7 @@ pub enum KiwiClientMessage {
         output_rate: i64,
     },
     Login(Option<String>),
+    KeepAlive,
     SetCompression(bool),
     SetIdentity(String),
     SetLocation(String),
@@ -48,6 +49,7 @@ pub enum KiwiClientMessage {
 impl From<KiwiClientMessage> for Message {
     fn from(msg: KiwiClientMessage) -> Message {
         match msg {
+            KiwiClientMessage::KeepAlive => Message::Text("SET keepalive".to_string()),
             KiwiClientMessage::Login(password) => {
                 if let Some(pass) = password {
                     Message::Text(format!("SET auth t=kiwi p={}", pass))
@@ -72,26 +74,32 @@ impl From<KiwiClientMessage> for Message {
                 Tuning::FM {
                     low_cut,
                     high_cut,
-                    frequency: freq,
+                    frequency,
                 } => Message::Text(format!(
                     "SET mod=fm low_cut={} high_cut={} freq={}",
-                    low_cut, high_cut, freq
+                    low_cut,
+                    high_cut,
+                    frequency / 1000.0
                 )),
                 Tuning::LSB {
                     low_cut,
                     high_cut,
-                    frequency: freq,
+                    frequency,
                 } => Message::Text(format!(
                     "SET mod=lsb low_cut={} high_cut={} freq={}",
-                    low_cut, high_cut, freq
+                    low_cut,
+                    high_cut,
+                    frequency / 1000.0
                 )),
                 Tuning::USB {
                     low_cut,
                     high_cut,
-                    frequency: freq,
+                    frequency,
                 } => Message::Text(format!(
                     "SET mod=usb low_cut={} high_cut={} freq={}",
-                    low_cut, high_cut, freq
+                    low_cut,
+                    high_cut,
+                    frequency / 1000.0
                 )),
                 _ => {
                     todo!();
@@ -133,7 +141,7 @@ impl From<KiwiClientMessage> for Message {
 pub enum KiwiServerMessage {
     AuthenticationResult(bool),
     Unknown(String),
-    AudioInit,
+    AudioInit(u32),
 }
 
 impl From<String> for KiwiServerMessage {
@@ -145,7 +153,11 @@ impl From<String> for KiwiServerMessage {
                 KiwiServerMessage::AuthenticationResult(true)
             }
         } else if msg.contains("audio_init") {
-            KiwiServerMessage::AudioInit
+            let parts = msg.split_whitespace().collect::<Vec<&str>>();
+            let parts = parts[1].split('=').collect::<Vec<&str>>();
+            let rate = parts[1].parse::<u32>().unwrap();
+
+            KiwiServerMessage::AudioInit(rate)
         } else {
             KiwiServerMessage::Unknown(msg)
         }

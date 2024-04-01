@@ -1,5 +1,3 @@
-use super::message::KiwiServerMessage;
-
 #[derive(Debug)]
 pub enum KiwiCloseReason {
     ServerClosed,
@@ -10,7 +8,7 @@ pub enum KiwiCloseReason {
 pub enum KiwiEvent {
     Close(KiwiCloseReason),
     Message(String),
-    Ready,
+    Ready(u32),
     SoundData(Vec<u8>),
     Ping,
 }

@@ -10,11 +10,11 @@ pub enum SDRKind {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct SDRStationConfig {
     pub name: String,
-    pub kind: SDRKind,
     pub endpoint: String,
     pub password: Option<String>,
     pub agc: bool,
-    pub tuning: Tuning,
+    pub gain: Option<i32>,
+    pub frequency: Vec<f64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

@@ -1,38 +1,60 @@
 use byteorder::ReadBytesExt;
+use chrono::Utc;
 
 pub mod ima_adpcm;
 
 pub struct Writer {
-    pub wav_writer: hound::WavWriter<std::io::BufWriter<std::fs::File>>,
-    pub decoder: ima_adpcm::IMA_ADPCM_Decoder,
+    name: String,
+    dir: std::path::PathBuf,
+    wav_writer: Option<hound::WavWriter<std::io::BufWriter<std::fs::File>>>,
+    decoder: ima_adpcm::IMA_ADPCM_Decoder,
+    sample_rate: u32,
 }
 
 impl Writer {
-    pub fn new(file: std::fs::File) -> Self {
+    pub fn new(name: String, dir: &std::path::Path) -> Self {
         Writer {
-            wav_writer: hound::WavWriter::new(
+            name: name,
+            dir: dir.to_path_buf(),
+            wav_writer: None,
+            sample_rate: 12000,
+            decoder: ima_adpcm::IMA_ADPCM_Decoder::new(),
+        }
+    }
+
+    pub fn set_sample_rate(&mut self, sample_rate: u32) {
+        self.sample_rate = sample_rate;
+    }
+
+    fn open(&mut self, path: &std::path::Path) {
+        let file = std::fs::File::create(self.dir.join(path)).unwrap();
+        self.wav_writer = Some(
+            hound::WavWriter::new(
                 std::io::BufWriter::new(file),
                 hound::WavSpec {
                     channels: 1,
-                    sample_rate: 12000,
+                    sample_rate: self.sample_rate,
                     bits_per_sample: 16,
                     sample_format: hound::SampleFormat::Int,
                 },
             )
             .unwrap(),
-            decoder: ima_adpcm::IMA_ADPCM_Decoder::new(),
-        }
-    }
-
-    pub fn write_sample(&mut self, sample: i16) {
-        let mut writer = self.wav_writer.get_i16_writer(1);
-        writer.write_sample(sample);
-        writer.flush().unwrap();
+        );
+        self.decoder = ima_adpcm::IMA_ADPCM_Decoder::new();
     }
 
     pub fn write_samples(&mut self, samples: &Vec<u8>) {
-        // log::debug!("Writing samples: {:?}", samples);
-        let mut writer = self.wav_writer.get_i16_writer((samples.len() as u32) * 2);
+        if self.wav_writer.is_none() {
+            self.open(std::path::Path::new(
+                format!("{}_{}.wav", self.name, Utc::now().format("%Y%m%d_%H%M%S")).as_str(),
+            ));
+        }
+
+        let mut writer = self
+            .wav_writer
+            .as_mut()
+            .unwrap()
+            .get_i16_writer((samples.len() as u32) * 2);
         let mut cursor = std::io::Cursor::new(samples);
         while let Ok(sample) = cursor.read_u8() {
             let decoded = self.decoder.decode((sample & 0x0F) as u16);
@@ -41,5 +63,15 @@ impl Writer {
             writer.write_sample(decoded);
         }
         writer.flush().unwrap();
+    }
+
+    pub fn close(&mut self) {
+        // Use Option<WavWriter> and finalize() to avoid this
+        match self.wav_writer.take() {
+            Some(writer) => {
+                writer.finalize().unwrap();
+            }
+            None => {}
+        }
     }
 }

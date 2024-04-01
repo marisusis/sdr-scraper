@@ -6,13 +6,6 @@ use std::fmt::{self, Display, Formatter};
 pub use scraper::{SDRScraper, ScraperStatus};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug)]
-pub enum SDRError {
-    NotConnected,
-    NotReady,
-    Timeout,
-}
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "mode")]
 pub enum Tuning {

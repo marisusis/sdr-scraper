@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use colored::Colorize;
-use hound::{WavSpec, WavWriter};
+
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use url::Url;
@@ -18,7 +18,7 @@ use crate::{
     },
 };
 
-use super::{message::KiwiServerMessage, KiwiSDR};
+use super::KiwiSDR;
 
 #[derive(Clone)]
 pub struct KiwiSDRScraperSettings {
@@ -28,6 +28,8 @@ pub struct KiwiSDRScraperSettings {
     pub station: Tuning,
     pub agc: bool,
 }
+
+pub struct KiwiScraperStats {}
 
 pub struct KiwiSDRScraper {
     settings: KiwiSDRScraperSettings,
@@ -45,7 +47,8 @@ impl KiwiSDRScraper {
             status: ScraperStatus::Stopped,
             token: CancellationToken::new(),
             writer: Arc::new(Mutex::new(Writer::new(
-                std::fs::File::create(format!("{}.wav", settings.name)).unwrap(),
+                settings.name.clone(),
+                std::path::Path::new("./RECORD"),
             ))),
         }
     }
@@ -83,7 +86,7 @@ impl SDRScraper for KiwiSDRScraper {
                 log::debug!("spawned event thread for {}", settings.name.green());
                 loop {
                     if let Some(event) = {
-                        // Make sure SDR instance is dropped immediately after fetching the latest message
+                        // Make sure SDR instance lock is dropped immediately after fetching the latest message
                         let mut sdr = sdr.lock().await;
                         sdr.read_event(std::time::Duration::from_secs(1)).await
                     } {
@@ -104,15 +107,10 @@ impl SDRScraper for KiwiSDRScraper {
                                     }
                                 }
 
-                                let reconnect_timeout = std::time::Duration::from_secs(1);
+                                writer.lock().await.close();
 
-                                log::info!(
-                                    "{}: reconnecting in {}",
-                                    settings.name.yellow(),
-                                    reconnect_timeout.as_secs()
-                                );
-
-                                tokio::time::sleep(reconnect_timeout).await;
+                                log::info!("{}: reconnecting in 4...", settings.name.yellow());
+                                tokio::time::sleep(std::time::Duration::from_secs(4)).await;
 
                                 match sdr.lock().await.connect(settings.password.clone()).await {
                                     Ok(_) => {
@@ -127,64 +125,94 @@ impl SDRScraper for KiwiSDRScraper {
                                     }
                                 };
                             }
-                            KiwiEvent::Ready => {
-                                log::debug!("{} is ready", settings.name.green());
+                            KiwiEvent::Ready(rate) => {
+                                log::info!("{} is ready at {} Hz", settings.name.green(), rate);
+                                writer.lock().await.set_sample_rate(rate);
 
-                                let sdr = sdr.lock().await;
+                                {
+                                    let sdr = sdr.lock().await;
 
-                                sdr.send_message(KiwiClientMessage::AROk {
-                                    input_rate: 12000,
-                                    output_rate: 48000,
-                                })
-                                .await
-                                .unwrap();
-
-                                sdr.send_message(KiwiClientMessage::Unknown(
-                                    "SERVER DE CLIENT openwebrx.js SND".to_string(),
-                                ))
-                                .await
-                                .unwrap();
-
-                                sdr.send_message(KiwiClientMessage::Unknown("SET browser=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15".to_string()))
+                                    sdr.send_message(KiwiClientMessage::AROk {
+                                        input_rate: 12000,
+                                        output_rate: 48000,
+                                    })
                                     .await
                                     .unwrap();
 
-                                sdr.send_message(KiwiClientMessage::Unknown(
-                                    "SET squelch=0 param=0.00".to_string(),
-                                ))
-                                .await
-                                .unwrap();
-
-                                sdr.send_message(KiwiClientMessage::Tune(settings.station.clone()))
+                                    sdr.send_message(KiwiClientMessage::Unknown(
+                                        "SERVER DE CLIENT openwebrx.js SND".to_string(),
+                                    ))
                                     .await
                                     .unwrap();
 
-                                sdr.send_message(KiwiClientMessage::SetIdentity(
-                                    "W8EDU".to_string(),
-                                ))
-                                .await
-                                .unwrap();
-
-                                sdr.send_message(KiwiClientMessage::SetLocation(
-                                    "Cleveland, OH".to_string(),
-                                ))
-                                .await
-                                .unwrap();
-
-                                sdr.send_message(KiwiClientMessage::SetAgc {
-                                    enabled: true,
-                                    decay: 1370,
-                                    hang: false,
-                                    slope: 6,
-                                    thresh: -96,
-                                    gain: 70,
-                                })
-                                .await
-                                .unwrap();
-
-                                sdr.send_message(KiwiClientMessage::SetCompression(true))
+                                    sdr.send_message(KiwiClientMessage::Unknown("SET browser=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15".to_string()))
                                     .await
                                     .unwrap();
+
+                                    sdr.send_message(KiwiClientMessage::Unknown(
+                                        "SET squelch=0 param=0.00".to_string(),
+                                    ))
+                                    .await
+                                    .unwrap();
+
+                                    sdr.send_message(KiwiClientMessage::Tune(
+                                        settings.station.clone(),
+                                    ))
+                                    .await
+                                    .unwrap();
+
+                                    sdr.send_message(KiwiClientMessage::SetIdentity(
+                                        "W8EDU".to_string(),
+                                    ))
+                                    .await
+                                    .unwrap();
+
+                                    sdr.send_message(KiwiClientMessage::SetLocation(
+                                        "Cleveland, OH".to_string(),
+                                    ))
+                                    .await
+                                    .unwrap();
+
+                                    sdr.send_message(KiwiClientMessage::SetAgc {
+                                        enabled: true,
+                                        decay: 1370,
+                                        hang: false,
+                                        slope: 6,
+                                        thresh: -96,
+                                        gain: 70,
+                                    })
+                                    .await
+                                    .unwrap();
+
+                                    sdr.send_message(KiwiClientMessage::SetCompression(true))
+                                        .await
+                                        .unwrap();
+                                }
+
+                                // Start keepalive loop
+                                let sdr = sdr.clone();
+                                let token = token.clone();
+                                let settings = settings.clone();
+                                tokio::spawn(async move {
+                                    let keepalive_loop = async move {
+                                        loop {
+                                            tokio::time::sleep(std::time::Duration::from_secs(5))
+                                                .await;
+                                            sdr.lock()
+                                                .await
+                                                .send_message(KiwiClientMessage::KeepAlive)
+                                                .await
+                                                .unwrap();
+                                        }
+                                    };
+
+                                    tokio::select! {
+                                        _ = keepalive_loop => {}
+                                        _ = token.cancelled() => {
+                                            log::debug!("{}: keepalive loop cancelled", settings.name.yellow());
+                                        }
+                                    };
+                                });
                             }
                             KiwiEvent::SoundData(data) => {
                                 log::debug!(
