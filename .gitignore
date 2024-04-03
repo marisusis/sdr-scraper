@@ -2,4 +2,4 @@
 *.wav
 *.reapeaks
 config.toml
-config.json
+config.json*

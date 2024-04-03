@@ -1,5 +1,8 @@
+use std::time::Instant;
+
 use byteorder::ReadBytesExt;
 use chrono::Utc;
+use std::boxed::Box;
 
 pub mod ima_adpcm;
 
@@ -9,6 +12,7 @@ pub struct Writer {
     wav_writer: Option<hound::WavWriter<std::io::BufWriter<std::fs::File>>>,
     decoder: ima_adpcm::IMA_ADPCM_Decoder,
     sample_rate: u32,
+    start: Instant,
 }
 
 impl Writer {
@@ -19,6 +23,7 @@ impl Writer {
             wav_writer: None,
             sample_rate: 12000,
             decoder: ima_adpcm::IMA_ADPCM_Decoder::new(),
+            start: Instant::now(),
         }
     }
 
@@ -27,6 +32,7 @@ impl Writer {
     }
 
     fn open(&mut self, path: &std::path::Path) {
+        self.start = Instant::now();
         let file = std::fs::File::create(self.dir.join(path)).unwrap();
         self.wav_writer = Some(
             hound::WavWriter::new(
@@ -63,10 +69,12 @@ impl Writer {
             writer.write_sample(decoded);
         }
         writer.flush().unwrap();
+        if self.start.elapsed().as_secs() > 1800 {
+            self.close();
+        }
     }
 
     pub fn close(&mut self) {
-        // Use Option<WavWriter> and finalize() to avoid this
         match self.wav_writer.take() {
             Some(writer) => {
                 writer.finalize().unwrap();
