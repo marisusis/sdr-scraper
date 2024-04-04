@@ -2,15 +2,33 @@ mod audio;
 mod config;
 mod sdr;
 
+use std::future::IntoFuture;
+use std::sync::Arc;
+
+use axum::extract::State;
+use axum::{Json, Router};
 use colored::Colorize;
 
-use sdr::kiwi::{KiwiSDRScraper, KiwiSDRScraperSettings};
+use reqwest::StatusCode;
+use sdr::kiwi::{KiwiSDRScraper, KiwiSDRScraperSettings, KiwiScraperStats};
 use sdr::Tuning;
 
+use tokio::sync::Mutex;
 use url::Url;
 
 use crate::config::{Config, SDRKind};
 use crate::sdr::{SDRScraper, ScraperStatus};
+
+struct AppState {
+    stats: Vec<KiwiScraperStats>,
+}
+
+async fn root(
+    State(app_state): State<Arc<Mutex<AppState>>>,
+) -> Result<Json<Vec<KiwiScraperStats>>, StatusCode> {
+    let state = app_state.lock().await;
+    Ok(Json(state.stats.clone()))
+}
 
 #[tokio::main]
 // Use multi threading
@@ -86,7 +104,52 @@ async fn main() {
         }
     }
 
-    tokio::signal::ctrl_c().await.unwrap();
+    let state = Arc::new(Mutex::new(AppState { stats: Vec::new() }));
+
+    let router = Router::new()
+        // `GET /` goes to `root`
+        .route("/", axum::routing::get(root))
+        .with_state(state.clone());
+
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+
+    // axum::serve(listener, router).await.unwrap();
+    //
+
+    let cancellation_token = tokio_util::sync::CancellationToken::new();
+    let token_clone = cancellation_token.clone();
+    tokio::spawn(async move {
+        let future = axum::serve(listener, router).into_future();
+        tokio::select! {
+            _ = future => {}
+            _ = token_clone.cancelled() => {}
+        }
+    });
+
+    loop {
+        let future1 = async {
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            let mut state = state.lock().await;
+            let mut stats = Vec::new();
+            for station in &stations {
+                stats.push(station.get_stats());
+            }
+
+            state.stats = stats;
+        };
+
+        let future2 = tokio::signal::ctrl_c();
+
+        tokio::select! {
+            _ = future1 => {
+            }
+            _ = future2 => {
+                log::info!("ctrl-c received");
+                break;
+            }
+        }
+    }
+
     println!();
 
     for station in &mut stations {

@@ -9,6 +9,6 @@ pub enum KiwiEvent {
     Close(KiwiCloseReason),
     Message(String),
     Ready(u32),
-    SoundData(Vec<u8>),
+    SoundData { data: Vec<u8>, rssi: f64 },
     Ping,
 }

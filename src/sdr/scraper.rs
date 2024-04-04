@@ -1,3 +1,5 @@
+use super::kiwi::KiwiScraperStats;
+
 #[derive(Eq, PartialEq, Clone)]
 pub enum ScraperStatus {
     Running,
@@ -10,4 +12,5 @@ pub trait SDRScraper {
     async fn stop(&mut self) -> anyhow::Result<()>;
     fn status(&self) -> ScraperStatus;
     fn name(&self) -> &str;
+    fn get_stats(&self) -> KiwiScraperStats;
 }

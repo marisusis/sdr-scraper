@@ -8,7 +8,7 @@ use byteorder::{BigEndian, ByteOrder, LittleEndian};
 use futures_util::{SinkExt, StreamExt};
 
 use rand::Rng;
-pub use scraper::{KiwiSDRScraper, KiwiSDRScraperSettings};
+pub use scraper::{KiwiSDRScraper, KiwiSDRScraperSettings, KiwiScraperStats};
 
 use serde::{Deserialize, Serialize};
 use tokio_tungstenite::tungstenite::Message;
@@ -119,11 +119,14 @@ impl KiwiSDR {
                                 let _seq = LittleEndian::read_u32(&data[1..5]);
                                 let smeter = BigEndian::read_u16(&data[5..7]);
 
-                                let rssi = 0.1 * smeter as f32 - 127.0;
+                                let rssi = 0.1 * smeter as f64 - 127.0;
                                 log::debug!("RSSI: {}", rssi);
 
                                 let data = data[7..].to_vec();
-                                event_tx.send(KiwiEvent::SoundData(data)).await.unwrap();
+                                event_tx
+                                    .send(KiwiEvent::SoundData { data, rssi })
+                                    .await
+                                    .unwrap();
                             }
                             "MSG" => {
                                 let str = match String::from_utf8(bin[4..].to_vec()) {

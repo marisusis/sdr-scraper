@@ -142,6 +142,7 @@ pub enum KiwiServerMessage {
     AuthenticationResult(bool),
     Unknown(String),
     AudioInit(u32),
+    SoundData(Vec<u8>),
 }
 
 impl From<String> for KiwiServerMessage {

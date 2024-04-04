@@ -1,7 +1,11 @@
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc,
+};
 
 use colored::Colorize;
 
+use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use url::Url;
@@ -29,7 +33,32 @@ pub struct KiwiSDRScraperSettings {
     pub agc: bool,
 }
 
-pub struct KiwiScraperStats {}
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct KiwiScraperStats {
+    name: String,
+    rssi: f64,
+}
+
+#[derive(Debug)]
+pub struct AtomicF64 {
+    storage: AtomicU64,
+}
+impl AtomicF64 {
+    pub fn new(value: f64) -> Self {
+        let as_u64 = value.to_bits();
+        Self {
+            storage: AtomicU64::new(as_u64),
+        }
+    }
+    pub fn store(&self, value: f64, ordering: Ordering) {
+        let as_u64 = value.to_bits();
+        self.storage.store(as_u64, ordering)
+    }
+    pub fn load(&self, ordering: Ordering) -> f64 {
+        let as_u64 = self.storage.load(ordering);
+        f64::from_bits(as_u64)
+    }
+}
 
 pub struct KiwiSDRScraper {
     settings: KiwiSDRScraperSettings,
@@ -37,6 +66,7 @@ pub struct KiwiSDRScraper {
     status: ScraperStatus,
     token: CancellationToken,
     writer: Arc<Mutex<Writer>>,
+    rssi: Arc<AtomicF64>,
 }
 
 impl KiwiSDRScraper {
@@ -50,9 +80,12 @@ impl KiwiSDRScraper {
                 settings.name.clone(),
                 std::path::Path::new("./RECORD"),
             ))),
+            rssi: Arc::new(AtomicF64::new(0.0)),
         }
     }
 }
+
+impl KiwiSDRScraper {}
 
 #[async_trait::async_trait]
 impl SDRScraper for KiwiSDRScraper {
@@ -79,9 +112,11 @@ impl SDRScraper for KiwiSDRScraper {
         let settings = self.settings.clone();
         let sdr = self.sdr.clone();
         let token = self.token.clone();
+        let rssi_clone = self.rssi.clone();
         let writer_clone = self.writer.clone();
         tokio::spawn(async move {
             let writer = writer_clone;
+            let rssi = rssi_clone;
             let event_loop = async {
                 log::debug!("spawned event thread for {}", settings.name.green());
                 loop {
@@ -214,12 +249,16 @@ impl SDRScraper for KiwiSDRScraper {
                                     };
                                 });
                             }
-                            KiwiEvent::SoundData(data) => {
+                            KiwiEvent::SoundData {
+                                data,
+                                rssi: the_rssi,
+                            } => {
                                 log::debug!(
                                     "{}: received {} samples",
                                     settings.name.blue(),
                                     data.len()
                                 );
+                                rssi.store(the_rssi, Ordering::Relaxed);
                                 writer.lock().await.write_samples(&data)
                             }
                             KiwiEvent::Message(msg) => {
@@ -271,5 +310,12 @@ impl SDRScraper for KiwiSDRScraper {
 
     fn name(&self) -> &str {
         &self.settings.name
+    }
+
+    fn get_stats(&self) -> KiwiScraperStats {
+        KiwiScraperStats {
+            rssi: self.rssi.load(Ordering::Relaxed) as f64,
+            name: self.settings.name.clone(),
+        }
     }
 }
