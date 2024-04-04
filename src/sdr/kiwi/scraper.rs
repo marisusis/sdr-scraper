@@ -31,6 +31,8 @@ pub struct KiwiSDRScraperSettings {
     pub password: Option<String>,
     pub station: Tuning,
     pub agc: bool,
+    pub location: String,
+    pub identity: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -197,13 +199,13 @@ impl SDRScraper for KiwiSDRScraper {
                                     .unwrap();
 
                                     sdr.send_message(KiwiClientMessage::SetIdentity(
-                                        "W8EDU".to_string(),
+                                        settings.identity.clone(),
                                     ))
                                     .await
                                     .unwrap();
 
                                     sdr.send_message(KiwiClientMessage::SetLocation(
-                                        "Cleveland, OH".to_string(),
+                                        settings.location.clone(),
                                     ))
                                     .await
                                     .unwrap();

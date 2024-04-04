@@ -87,6 +87,8 @@ async fn main() {
                 endpoint: endpoint.clone(),
                 password: station_config.password.clone(),
                 agc: station_config.agc,
+                location: config.location.clone(),
+                identity: config.identity.clone(),
                 station: Tuning::USB {
                     low_cut: 300,
                     high_cut: 2700,
