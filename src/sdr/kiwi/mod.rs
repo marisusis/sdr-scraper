@@ -120,7 +120,6 @@ impl KiwiSDR {
                                 let smeter = BigEndian::read_u16(&data[5..7]);
 
                                 let rssi = 0.1 * smeter as f64 - 127.0;
-                                log::debug!("RSSI: {}", rssi);
 
                                 let data = data[7..].to_vec();
                                 event_tx
@@ -252,18 +251,3 @@ impl KiwiSDR {
         Ok(())
     }
 }
-
-// pub struct KiwiSDRInner {
-//     endpoint: Url,
-//     password: Option<String>,
-// }
-
-// impl KiwiSDRInner {
-//     fn connect(&self) -> Result<()> {
-//         Ok(())
-//     }
-
-//     fn send_message(message: impl Into<Message>) -> Result<()> {
-//         Ok(())
-//     }
-// }
